@@ -34,3 +34,13 @@ git add -A && git commit -m "v1.0.xx" && git push
 ```
 
 ※ Cargo.tomlのバージョンが変わっていれば、GitHub Actionsが自動でタグを作成してリリースビルドを実行する
+
+## 重要: バージョンアップが必要なケース
+
+以下のファイルを変更した場合は、**必ず** `rust-server/Cargo.toml` の version をパッチすること:
+
+- `rust-server/src/main.rs` - Rustサーバー本体
+- `rust-server/wix/main.wxs` - MSIインストーラー定義
+- `src/download-supabase-invoice.ts` - ダウンロードスクリプト
+
+バージョンアップなしでプッシュすると、リリースビルドが実行されない。

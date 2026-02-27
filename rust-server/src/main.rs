@@ -188,15 +188,34 @@ fn check_and_setup_environment() -> Result<(), String> {
         }
     }
 
-    // 2. node_modules 存在確認 (app_root内)
-    println!("  [2/3] 依存関係チェック...");
+    // 2. npm インストール確認
+    println!("  [2/3] npm インストール確認...");
+    let npm_cmd = if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" };
+    let npm_check = Command::new(npm_cmd).arg("--version").output();
+
+    match npm_check {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            println!("    ✓ npm: v{}", version.trim());
+        }
+        _ => {
+            return Err(
+                "npm が見つかりません。Node.js に npm が含まれていることを確認してください。\n\
+                システム環境変数 PATH に npm のパスが含まれているか確認してください。"
+                    .to_string(),
+            );
+        }
+    }
+
+    // 3. node_modules 存在確認 (app_root内)
+    println!("  [3/3] 依存関係チェック...");
     let node_modules_path = app_root.join("node_modules");
 
     if !node_modules_path.exists() {
         println!("    ⚙ npm install を実行中...");
         println!("    作業ディレクトリ: {}", app_root.display());
 
-        let npm_install = Command::new("npm")
+        let npm_install = Command::new(npm_cmd)
             .arg("install")
             .current_dir(&app_root)
             .status();
@@ -223,8 +242,8 @@ fn check_and_setup_environment() -> Result<(), String> {
         println!("    ✓ node_modules 存在確認");
     }
 
-    // 3. Playwright ブラウザ確認
-    println!("  [3/3] Playwright ブラウザチェック...");
+    // 4. Playwright ブラウザ確認
+    println!("  [4/4] Playwright ブラウザチェック...");
 
     // %APPDATA%\dencho-cli\browsers をチェック
     let appdata = std::env::var("APPDATA").unwrap_or_else(|_| {
@@ -236,7 +255,8 @@ fn check_and_setup_environment() -> Result<(), String> {
         println!("    ⚙ Playwright ブラウザをダウンロード中 (約 300MB, 1-2分)...");
 
         // PLAYWRIGHT_BROWSERS_PATH を設定
-        let mut cmd = Command::new("npx");
+        let npx_cmd = if cfg!(target_os = "windows") { "npx.cmd" } else { "npx" };
+        let mut cmd = Command::new(npx_cmd);
         cmd.arg("playwright")
             .arg("install")
             .arg("chromium")

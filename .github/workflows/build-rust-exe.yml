@@ -28,6 +28,7 @@ jobs:
           workspaces: rust-server
           cache-all-crates: true
           shared-key: dencho-cli-release
+          cache-on-failure: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

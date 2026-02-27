@@ -21,7 +21,12 @@ jobs:
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
-          cache: true
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-server
+          shared-key: dencho-cli-release
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

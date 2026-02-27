@@ -104,8 +104,15 @@ async function downloadSupabaseInvoices() {
         console.log('2FA/passkey/OAuth認証フローに入りました...');
         console.log('organizationsページへのリダイレクトを待機中...');
 
-        // organizationsページにリダイレクトされるまで待機（最大5分）
-        await page.waitForURL('**/organizations**', { timeout: 300000 });
+        // organizationsページに到達するまで待機（最大5分）
+        // waitForFunction は現在のURLもチェックするため、既に到達済みでも正常に完了する
+        await page.waitForFunction(
+          () => {
+            const url = window.location.pathname;
+            return url.includes('/organizations');
+          },
+          { timeout: 300000 }
+        );
         console.log('組織ページに到達しました');
       }
 

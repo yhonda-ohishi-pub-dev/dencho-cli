@@ -72,7 +72,7 @@ jobs:
       - name: Build MSI installer
         run: |
           cd rust-server
-          cargo wix --nocapture --target x86_64-pc-windows-msvc
+          cargo wix --no-build --nocapture --target x86_64-pc-windows-msvc
 
       - name: Create ZIP archive (backup)
         run: |

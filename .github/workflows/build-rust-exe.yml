@@ -40,6 +40,9 @@ jobs:
           cd rust-server
           cargo build --release --target x86_64-pc-windows-msvc
 
+      - name: Install cargo-wix
+        run: cargo install cargo-wix
+
       - name: Copy files to release directory
         run: |
           mkdir release
@@ -48,7 +51,17 @@ jobs:
           xcopy /E /I node_modules release\node_modules
           copy package.json release\
 
-      - name: Create ZIP archive
+      - name: Create WiX configuration
+        run: |
+          cd rust-server
+          cargo wix init
+
+      - name: Build MSI installer
+        run: |
+          cd rust-server
+          cargo wix --nocapture --target x86_64-pc-windows-msvc
+
+      - name: Create ZIP archive (backup)
         run: |
           cd release
           7z a ..\dencho-cli-windows.zip *
@@ -56,7 +69,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dencho-cli-windows.zip
+          files: |
+            rust-server/target/wix/*.msi
+            dencho-cli-windows.zip
           draft: false
           prerelease: false
         env:

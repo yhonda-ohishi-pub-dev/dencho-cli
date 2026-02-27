@@ -1,4 +1,5 @@
 use axum::{
+    extract::Json as ExtractJson,
     http::{Method, StatusCode},
     response::Json,
     routing::{get, post},
@@ -8,6 +9,14 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
 use tower_http::cors::{Any, CorsLayer};
+
+#[derive(Serialize, Deserialize)]
+struct DownloadRequest {
+    #[serde(rename = "githubUsername")]
+    github_username: Option<String>,
+    #[serde(rename = "githubPassword")]
+    github_password: Option<String>,
+}
 
 #[derive(Serialize, Deserialize)]
 struct DownloadResponse {
@@ -83,7 +92,9 @@ async fn health_check() -> Json<serde_json::Value> {
 }
 
 /// 請求書ダウンロードエンドポイント
-async fn download_invoice() -> (StatusCode, Json<DownloadResponse>) {
+async fn download_invoice(
+    ExtractJson(payload): ExtractJson<DownloadRequest>,
+) -> (StatusCode, Json<DownloadResponse>) {
     println!("📥 ダウンロードリクエスト受信");
 
     // アプリケーションルートディレクトリを取得
@@ -116,10 +127,22 @@ async fn download_invoice() -> (StatusCode, Json<DownloadResponse>) {
     }
 
     // Node.js スクリプトを実行
-    let output = Command::new("node")
-        .arg(&script_path)
-        .current_dir(&app_root)
-        .output();
+    let mut cmd = Command::new("node");
+    cmd.arg(&script_path).current_dir(&app_root);
+
+    // GitHub認証情報を環境変数で渡す
+    if let Some(username) = payload.github_username {
+        if !username.is_empty() {
+            cmd.env("GITHUB_USERNAME", username);
+        }
+    }
+    if let Some(password) = payload.github_password {
+        if !password.is_empty() {
+            cmd.env("GITHUB_PASSWORD", password);
+        }
+    }
+
+    let output = cmd.output();
 
     match output {
         Ok(result) => {

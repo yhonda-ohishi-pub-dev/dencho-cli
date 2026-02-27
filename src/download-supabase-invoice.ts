@@ -9,6 +9,10 @@ const __dirname = path.dirname(__filename);
 const AUTH_STATE_PATH = path.join(process.cwd(), '.auth', 'supabase-state.json');
 const DOWNLOAD_DIR = path.join(process.cwd(), 'downloads', 'invoice');
 
+// GitHub認証情報を環境変数から取得
+const GITHUB_USERNAME = process.env.GITHUB_USERNAME || '';
+const GITHUB_PASSWORD = process.env.GITHUB_PASSWORD || '';
+
 async function downloadSupabaseInvoices() {
   // ダウンロードディレクトリ作成
   if (!fs.existsSync(DOWNLOAD_DIR)) {
@@ -69,8 +73,22 @@ async function downloadSupabaseInvoices() {
       // GitHubのログインページに遷移した場合（パスワード入力が必要）
       else if (afterClickUrl.includes('github.com') && afterClickUrl.includes('login')) {
         console.log('GitHubログインページに遷移しました');
-        console.log('Username/Passwordを入力してください...');
-        console.log('その後、passkey認証を完了してください...');
+
+        if (GITHUB_USERNAME && GITHUB_PASSWORD) {
+          console.log('保存された認証情報を使用して自動ログイン中...');
+
+          // Username/Email入力
+          await page.fill('input[name="login"]', GITHUB_USERNAME);
+          await page.fill('input[name="password"]', GITHUB_PASSWORD);
+
+          // Sign inボタンをクリック
+          await page.click('input[type="submit"][value="Sign in"]');
+
+          console.log('ログイン送信完了。認証を待機中...');
+        } else {
+          console.log('認証情報が保存されていません。手動でUsername/Passwordを入力してください...');
+          console.log('その後、passkey認証を完了してください...');
+        }
 
         // 組織ページに戻るまで待機
         console.log('認証完了を待機中...');

@@ -5,6 +5,7 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::Command;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -12,6 +13,36 @@ use tower_http::cors::{Any, CorsLayer};
 struct DownloadResponse {
     status: String,
     message: String,
+}
+
+/// アプリケーションルートディレクトリを検出
+/// インストールモード: C:\Program Files\dencho-cli\
+/// 開発モード: カレントディレクトリ
+fn get_application_root() -> Result<PathBuf, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("実行ファイルパス取得失敗: {}", e))?;
+
+    let exe_dir = exe_path.parent()
+        .ok_or("実行ファイルディレクトリ取得失敗")?;
+
+    // bin/サブディレクトリにいるかチェック（インストールモード）
+    if exe_dir.file_name() == Some(std::ffi::OsStr::new("bin")) {
+        let app_root = exe_dir.parent()
+            .ok_or("アプリケーションルート取得失敗")?;
+
+        // package.jsonの存在確認
+        if app_root.join("package.json").exists() {
+            println!("📦 インストール場所から実行: {}", app_root.display());
+            return Ok(app_root.to_path_buf());
+        }
+    }
+
+    // 開発モード: カレントディレクトリにフォールバック
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("カレントディレクトリ取得失敗: {}", e))?;
+
+    println!("🔧 開発ディレクトリから実行: {}", cwd.display());
+    Ok(cwd)
 }
 
 #[tokio::main]
@@ -55,9 +86,39 @@ async fn health_check() -> Json<serde_json::Value> {
 async fn download_invoice() -> (StatusCode, Json<DownloadResponse>) {
     println!("📥 ダウンロードリクエスト受信");
 
+    // アプリケーションルートディレクトリを取得
+    let app_root = match get_application_root() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("❌ アプリケーションルート取得エラー: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(DownloadResponse {
+                    status: "error".to_string(),
+                    message: format!("環境設定エラー: {}", e),
+                }),
+            );
+        }
+    };
+
+    // スクリプトパスを構築
+    let script_path = app_root.join("dist").join("download-supabase-invoice.js");
+
+    if !script_path.exists() {
+        eprintln!("❌ スクリプトが見つかりません: {}", script_path.display());
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(DownloadResponse {
+                status: "error".to_string(),
+                message: format!("スクリプトファイルが見つかりません: {}", script_path.display()),
+            }),
+        );
+    }
+
     // Node.js スクリプトを実行
     let output = Command::new("node")
-        .arg("dist/download-supabase-invoice.js")
+        .arg(&script_path)
+        .current_dir(&app_root)
         .output();
 
     match output {
@@ -107,6 +168,9 @@ async fn download_invoice() -> (StatusCode, Json<DownloadResponse>) {
 fn check_and_setup_environment() -> Result<(), String> {
     println!("🔍 環境チェック中...");
 
+    // アプリケーションルートディレクトリを取得
+    let app_root = get_application_root()?;
+
     // 1. Node.js インストール確認
     println!("  [1/3] Node.js インストール確認...");
     let node_check = Command::new("node").arg("--version").output();
@@ -124,18 +188,35 @@ fn check_and_setup_environment() -> Result<(), String> {
         }
     }
 
-    // 2. node_modules 存在確認
+    // 2. node_modules 存在確認 (app_root内)
     println!("  [2/3] 依存関係チェック...");
-    if !std::path::Path::new("node_modules").exists() {
+    let node_modules_path = app_root.join("node_modules");
+
+    if !node_modules_path.exists() {
         println!("    ⚙ npm install を実行中...");
-        let npm_install = Command::new("npm").arg("install").status();
+        println!("    作業ディレクトリ: {}", app_root.display());
+
+        let npm_install = Command::new("npm")
+            .arg("install")
+            .current_dir(&app_root)
+            .status();
 
         match npm_install {
             Ok(status) if status.success() => {
                 println!("    ✓ npm install 完了");
             }
-            _ => {
-                return Err("npm install に失敗しました".to_string());
+            Ok(_) => {
+                return Err(format!(
+                    "npm install に失敗しました。\n\
+                    インストールディレクトリへの書き込み権限が必要な場合があります。\n\
+                    管理者権限でコマンドプロンプトを開き、以下を実行してください:\n\
+                    cd \"{}\"\n\
+                    npm install",
+                    app_root.display()
+                ));
+            }
+            Err(e) => {
+                return Err(format!("npm install 実行エラー: {}", e));
             }
         }
     } else {
@@ -159,6 +240,7 @@ fn check_and_setup_environment() -> Result<(), String> {
         cmd.arg("playwright")
             .arg("install")
             .arg("chromium")
+            .current_dir(&app_root)
             .env("PLAYWRIGHT_BROWSERS_PATH", &browsers_path);
 
         let status = cmd.status();

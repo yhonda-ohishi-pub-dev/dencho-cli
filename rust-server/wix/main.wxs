@@ -101,7 +101,25 @@
                             Source='wix\License.rtf'
                             KeyPath='yes'/>
                     </Component>
-                    
+
+                    <!-- Node.js files: package.json at root level -->
+                    <Component Id='PackageJson' Guid='*'>
+                        <File Id='PackageJsonFile'
+                            DiskId='1'
+                            Source='..\package.json'
+                            KeyPath='yes'/>
+                    </Component>
+
+                    <!-- Node.js files: dist directory -->
+                    <Directory Id='DistFolder' Name='dist'>
+                        <Component Id='DistFiles' Guid='*'>
+                            <File Id='DownloadScriptFile'
+                                DiskId='1'
+                                Source='..\dist\download-supabase-invoice.js'
+                                KeyPath='yes'/>
+                        </Component>
+                    </Directory>
+
                     <Directory Id='Bin' Name='bin'>
                         <Component Id='Path' Guid='09C69E41-4E26-4CA7-A31D-85F77680C2CE' KeyPath='yes'>
                             <Environment
@@ -140,8 +158,12 @@
               the license sidecar file from the installer.
             -->
             <ComponentRef Id='License'/>
-            
+
             <ComponentRef Id='binary0'/>
+
+            <!-- Node.js file references -->
+            <ComponentRef Id='PackageJson'/>
+            <ComponentRef Id='DistFiles'/>
 
             <Feature
                 Id='Environment'

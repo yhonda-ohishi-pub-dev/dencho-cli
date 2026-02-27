@@ -64,6 +64,11 @@ jobs:
           xcopy /E /I node_modules release\node_modules
           copy package.json release\
 
+      - name: Copy Node.js files for MSI build
+        run: |
+          xcopy /E /I dist rust-server\dist
+          copy package.json rust-server\
+
       - name: Build MSI installer
         run: |
           cd rust-server

@@ -6,24 +6,9 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::mpsc;
-use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
-use windows_service::{
-    define_windows_service,
-    service::{
-        ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
-        ServiceType,
-    },
-    service_control_handler::{self, ServiceControlHandlerResult},
-    service_dispatcher,
-};
-
-const SERVICE_NAME: &str = "dencho-cli";
-const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
 
 #[derive(Serialize, Deserialize)]
 struct DownloadRequest {
@@ -53,6 +38,7 @@ fn get_application_root() -> Result<PathBuf, String> {
         let app_root = exe_dir.parent().ok_or("アプリケーションルート取得失敗")?;
 
         if app_root.join("package.json").exists() {
+            println!("📦 インストール場所から実行: {}", app_root.display());
             return Ok(app_root.to_path_buf());
         }
     }
@@ -61,112 +47,23 @@ fn get_application_root() -> Result<PathBuf, String> {
     let cwd = std::env::current_dir()
         .map_err(|e| format!("カレントディレクトリ取得失敗: {}", e))?;
 
+    println!("🔧 開発ディレクトリから実行: {}", cwd.display());
     Ok(cwd)
-}
-
-// Windows サービス定義
-define_windows_service!(ffi_service_main, service_main);
-
-fn service_main(_arguments: Vec<OsString>) {
-    if let Err(e) = run_service() {
-        log_to_file(&format!("サービスエラー: {}", e));
-    }
-}
-
-fn run_service() -> Result<(), Box<dyn std::error::Error>> {
-    let (shutdown_tx, shutdown_rx) = mpsc::channel();
-
-    let event_handler = move |control_event| -> ServiceControlHandlerResult {
-        match control_event {
-            ServiceControl::Stop => {
-                shutdown_tx.send(()).unwrap();
-                ServiceControlHandlerResult::NoError
-            }
-            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            _ => ServiceControlHandlerResult::NotImplemented,
-        }
-    };
-
-    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
-
-    status_handle.set_service_status(ServiceStatus {
-        service_type: SERVICE_TYPE,
-        current_state: ServiceState::Running,
-        controls_accepted: ServiceControlAccept::STOP,
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    log_to_file("サービス開始");
-
-    // 非同期ランタイムを作成してサーバーを起動
-    let rt = tokio::runtime::Runtime::new()?;
-
-    rt.block_on(async {
-        // 環境チェック
-        if let Err(e) = check_and_setup_environment() {
-            log_to_file(&format!("環境セットアップエラー: {}", e));
-            return;
-        }
-
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-            .allow_headers(Any);
-
-        let app = Router::new()
-            .route("/health", get(health_check))
-            .route("/api/download", post(download_invoice))
-            .layer(cors);
-
-        let addr = "127.0.0.1:3939";
-        log_to_file(&format!("サーバー起動: http://{}", addr));
-
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-
-        // シャットダウン監視タスク
-        let shutdown_signal = async move {
-            loop {
-                if shutdown_rx.try_recv().is_ok() {
-                    log_to_file("シャットダウン信号受信");
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-        };
-
-        tokio::select! {
-            _ = axum::serve(listener, app) => {}
-            _ = shutdown_signal => {}
-        }
-    });
-
-    status_handle.set_service_status(ServiceStatus {
-        service_type: SERVICE_TYPE,
-        current_state: ServiceState::Stopped,
-        controls_accepted: ServiceControlAccept::empty(),
-        exit_code: ServiceExitCode::Win32(0),
-        checkpoint: 0,
-        wait_hint: Duration::default(),
-        process_id: None,
-    })?;
-
-    log_to_file("サービス停止");
-    Ok(())
 }
 
 fn log_to_file(message: &str) {
     let log_dir = get_application_root()
         .map(|p| p.join("logs"))
-        .unwrap_or_else(|_| PathBuf::from("C:\\ProgramData\\dencho-cli\\logs"));
+        .unwrap_or_else(|_| PathBuf::from("."));
 
     let _ = std::fs::create_dir_all(&log_dir);
-    let log_file = log_dir.join("service.log");
+    let log_file = log_dir.join("server.log");
 
     let timestamp = chrono_lite_timestamp();
     let log_line = format!("[{}] {}\n", timestamp, message);
+
+    // コンソールにも出力
+    print!("{}", log_line);
 
     let _ = std::fs::OpenOptions::new()
         .create(true)
@@ -184,123 +81,40 @@ fn chrono_lite_timestamp() -> String {
     format!("{}", now)
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "install" => {
-                install_service();
-                return;
-            }
-            "uninstall" => {
-                uninstall_service();
-                return;
-            }
-            "run" => {
-                // コンソールモードで実行
-                run_console_mode();
-                return;
-            }
-            _ => {}
-        }
+    // "run" 引数があってもなくても同じ動作（互換性のため）
+    if args.len() > 1 && args[1] != "run" {
+        println!("使用方法: dencho-cli.exe [run]");
+        println!("  run  サーバーを起動します（デフォルト）");
+        return;
     }
 
-    // サービスとして起動
-    if let Err(e) = service_dispatcher::start(SERVICE_NAME, ffi_service_main) {
-        // サービスとして起動できない場合（コンソールから直接実行）
-        eprintln!("サービスとして起動できません: {}", e);
-        eprintln!("コンソールモードで実行するには: dencho-cli.exe run");
-        eprintln!("サービスとしてインストールするには: dencho-cli.exe install");
-    }
-}
-
-fn run_console_mode() {
-    println!("=== dencho-cli サーバー (コンソールモード) ===");
+    println!("=== dencho-cli サーバー ===");
 
     if let Err(e) = check_and_setup_environment() {
         eprintln!("❌ 環境セットアップエラー: {}", e);
         std::process::exit(1);
     }
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-            .allow_headers(Any);
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers(Any);
 
-        let app = Router::new()
-            .route("/health", get(health_check))
-            .route("/api/download", post(download_invoice))
-            .layer(cors);
+    let app = Router::new()
+        .route("/health", get(health_check))
+        .route("/api/download", post(download_invoice))
+        .layer(cors);
 
-        let addr = "127.0.0.1:3939";
-        println!("✓ サーバー起動完了: http://{}", addr);
-        println!("  Ctrl+C で終了します\n");
+    let addr = "127.0.0.1:3939";
+    println!("✓ サーバー起動完了: http://{}", addr);
+    println!("  ウィンドウを閉じるとサーバーが停止します\n");
 
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        axum::serve(listener, app).await.unwrap();
-    });
-}
-
-fn install_service() {
-    println!("サービスをインストール中...");
-
-    let exe_path = std::env::current_exe().expect("実行ファイルパス取得失敗");
-
-    let output = Command::new("sc")
-        .args([
-            "create",
-            SERVICE_NAME,
-            &format!("binPath={}", exe_path.display()),
-            "start=auto",
-            "DisplayName=Dencho CLI Server",
-        ])
-        .output();
-
-    match output {
-        Ok(result) if result.status.success() => {
-            println!("✓ サービスインストール完了");
-            println!("  サービス開始: sc start {}", SERVICE_NAME);
-
-            // サービスを開始
-            let _ = Command::new("sc").args(["start", SERVICE_NAME]).status();
-            println!("✓ サービスを開始しました");
-        }
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("❌ インストール失敗: {}", stderr);
-            eprintln!("管理者権限で実行してください");
-        }
-        Err(e) => {
-            eprintln!("❌ sc コマンド実行エラー: {}", e);
-        }
-    }
-}
-
-fn uninstall_service() {
-    println!("サービスをアンインストール中...");
-
-    // まずサービスを停止
-    let _ = Command::new("sc").args(["stop", SERVICE_NAME]).status();
-
-    let output = Command::new("sc")
-        .args(["delete", SERVICE_NAME])
-        .output();
-
-    match output {
-        Ok(result) if result.status.success() => {
-            println!("✓ サービスアンインストール完了");
-        }
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!("❌ アンインストール失敗: {}", stderr);
-        }
-        Err(e) => {
-            eprintln!("❌ sc コマンド実行エラー: {}", e);
-        }
-    }
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn health_check() -> Json<serde_json::Value> {
@@ -403,17 +217,26 @@ async fn download_invoice(
 }
 
 fn check_and_setup_environment() -> Result<(), String> {
+    println!("🔍 環境チェック中...");
+
     let app_root = get_application_root()?;
 
     // Node.js チェック
+    println!("  [1/3] Node.js チェック...");
     let node_check = Command::new("node").arg("--version").output();
-    if node_check.is_err() || !node_check.unwrap().status.success() {
-        return Err("Node.js が見つかりません".to_string());
+    match node_check {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            println!("    ✓ Node.js: {}", version.trim());
+        }
+        _ => return Err("Node.js が見つかりません".to_string()),
     }
 
     // node_modules チェック
+    println!("  [2/3] 依存関係チェック...");
     let node_modules_path = app_root.join("node_modules");
     if !node_modules_path.exists() {
+        println!("    ⚙ npm install を実行中...");
         let npm_cmd = if cfg!(target_os = "windows") {
             "npm.cmd"
         } else {
@@ -427,9 +250,13 @@ fn check_and_setup_environment() -> Result<(), String> {
         if status.is_err() || !status.unwrap().success() {
             return Err("npm install に失敗しました".to_string());
         }
+        println!("    ✓ npm install 完了");
+    } else {
+        println!("    ✓ node_modules 存在確認");
     }
 
     // Playwright ブラウザチェック
+    println!("  [3/3] Playwright ブラウザチェック...");
     let appdata = std::env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
     let browsers_path = std::path::Path::new(&appdata)
         .join("dencho-cli")
@@ -440,6 +267,7 @@ fn check_and_setup_environment() -> Result<(), String> {
             .ok()
             .map_or(true, |mut d| d.next().is_none())
     {
+        println!("    ⚙ Playwright ブラウザをダウンロード中...");
         let npx_cmd = if cfg!(target_os = "windows") {
             "npx.cmd"
         } else {
@@ -454,7 +282,11 @@ fn check_and_setup_environment() -> Result<(), String> {
         if status.is_err() || !status.unwrap().success() {
             return Err("Playwright ブラウザのインストールに失敗しました".to_string());
         }
+        println!("    ✓ Playwright ブラウザインストール完了");
+    } else {
+        println!("    ✓ Playwright ブラウザ存在確認");
     }
 
+    println!("✓ 環境チェック完了\n");
     Ok(())
 }

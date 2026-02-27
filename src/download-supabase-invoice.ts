@@ -52,8 +52,14 @@ async function downloadSupabaseInvoices() {
   // 認証状態の確認
   const hasAuth = fs.existsSync(AUTH_STATE_PATH);
 
+  // headlessモード: 認証済みの場合はheadless、未認証の場合はheaded（MFA入力のため）
+  // 環境変数 HEADLESS=true で強制headlessモードも可能
+  const forceHeadless = process.env.HEADLESS === 'true';
+  const headless = forceHeadless || hasAuth;
+  log(`ブラウザモード: ${headless ? 'headless' : 'headed'}`);
+
   const browser = await chromium.launch({
-    headless: false // デバッグのため一旦headedモード
+    headless: headless
   });
 
   const context = hasAuth

@@ -10,6 +10,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use tower_http::cors::{Any, CorsLayer};
 
+#[derive(Serialize)]
+struct VersionResponse {
+    version: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct DownloadRequest {
     #[serde(rename = "githubUsername")]
@@ -106,6 +111,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/api/version", get(get_version))
         .route("/api/download", post(download_invoice))
         .layer(cors);
 
@@ -119,6 +125,12 @@ async fn main() {
 
 async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok" }))
+}
+
+async fn get_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
 }
 
 async fn download_invoice(

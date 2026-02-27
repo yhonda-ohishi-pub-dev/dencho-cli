@@ -1,0 +1,21 @@
+{
+  "name": "dencho-cli",
+  "version": "1.0.0",
+  "description": "Playwright CLI for downloading invoices from Supabase",
+  "main": "dist/download-supabase-invoice.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "download:supabase": "node dist/download-supabase-invoice.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  }
+}

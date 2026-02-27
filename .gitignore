@@ -1,0 +1,7 @@
+node_modules/
+.auth/
+dist/
+downloads/
+rust-server/target/
+*.exe
+denchoho-invoice/

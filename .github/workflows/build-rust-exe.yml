@@ -1,0 +1,58 @@
+name: Build Rust Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Build Rust EXE
+        run: |
+          cd rust-server
+          cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Copy files to release directory
+        run: |
+          mkdir release
+          copy rust-server\target\x86_64-pc-windows-msvc\release\dencho-cli.exe release\
+          xcopy /E /I dist release\dist
+          xcopy /E /I node_modules release\node_modules
+          copy package.json release\
+
+      - name: Create ZIP archive
+        run: |
+          cd release
+          7z a ..\dencho-cli-windows.zip *
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dencho-cli-windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

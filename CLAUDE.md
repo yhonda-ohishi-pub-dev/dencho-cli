@@ -26,12 +26,11 @@ cargo build --release  # Rustサーバーをビルド (rust-server/)
 
 1. コードを修正
 2. `npm run build` でビルド確認
-3. 必要に応じて各パッケージのバージョンをパッチ
-   - npm: `package.json` の version
-   - Cargo: `rust-server/Cargo.toml` の version
-4. コミット & プッシュ
-5. **タグを作成してプッシュ**（GitHub Actionsでリリースビルドがトリガーされる）
-   ```bash
-   git tag v1.0.xx
-   git push origin v1.0.xx
-   ```
+3. `rust-server/Cargo.toml` の version をパッチ
+4. コミット & プッシュ → **自動でタグ作成 & リリース**
+
+```bash
+git add -A && git commit -m "v1.0.xx" && git push
+```
+
+※ Cargo.tomlのバージョンが変わっていれば、GitHub Actionsが自動でタグを作成してリリースビルドを実行する

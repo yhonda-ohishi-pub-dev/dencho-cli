@@ -1,10 +1,13 @@
-name: Build Rust Windows EXE
+name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
+    branches: [main]
+    paths:
+      - 'rust-server/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
 
 permissions:
   contents: write
@@ -15,6 +18,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # 直前コミットとの比較用
+
+      - name: Check version change
+        id: version
+        shell: pwsh
+        run: |
+          $diff = git diff HEAD~1 HEAD -- rust-server/Cargo.toml
+          if ($diff) {
+            $oldMatch = $diff | Select-String '^\-version = "([^"]+)"'
+            $newMatch = $diff | Select-String '^\+version = "([^"]+)"'
+            if ($oldMatch -and $newMatch) {
+              $old = $oldMatch.Matches.Groups[1].Value
+              $new = $newMatch.Matches.Groups[1].Value
+              if ($old -ne $new) {
+                echo "changed=true" >> $env:GITHUB_OUTPUT
+                echo "version=$new" >> $env:GITHUB_OUTPUT
+                Write-Host "Version bumped: $old -> $new"
+              } else {
+                echo "changed=false" >> $env:GITHUB_OUTPUT
+              }
+            } else {
+              echo "changed=false" >> $env:GITHUB_OUTPUT
+            }
+          } else {
+            echo "changed=false" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -47,7 +77,9 @@ jobs:
           cd rust-server
           cargo build --release --target x86_64-pc-windows-msvc
 
+      # --- ここからリリース時のみ実行 ---
       - name: Cache cargo-wix
+        if: steps.version.outputs.changed == 'true'
         uses: actions/cache@v4
         id: cache-cargo-wix
         with:
@@ -55,10 +87,11 @@ jobs:
           key: ${{ runner.os }}-cargo-wix-0.3.9
 
       - name: Install cargo-wix
-        if: steps.cache-cargo-wix.outputs.cache-hit != 'true'
+        if: steps.version.outputs.changed == 'true' && steps.cache-cargo-wix.outputs.cache-hit != 'true'
         run: cargo install cargo-wix
 
       - name: Copy files to release directory
+        if: steps.version.outputs.changed == 'true'
         run: |
           mkdir release
           copy rust-server\target\x86_64-pc-windows-msvc\release\dencho-cli.exe release\
@@ -67,23 +100,36 @@ jobs:
           copy package.json release\
 
       - name: Copy Node.js files for MSI build
+        if: steps.version.outputs.changed == 'true'
         run: |
           xcopy /E /I dist rust-server\dist
           copy package.json rust-server\
 
       - name: Build MSI installer
+        if: steps.version.outputs.changed == 'true'
         run: |
           cd rust-server
           cargo wix --no-build --nocapture --target x86_64-pc-windows-msvc
 
-      - name: Create ZIP archive (backup)
+      - name: Create ZIP archive
+        if: steps.version.outputs.changed == 'true'
         run: |
           cd release
           7z a ..\dencho-cli-windows.zip *
 
+      - name: Create tag
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag v${{ steps.version.outputs.version }}
+          git push origin v${{ steps.version.outputs.version }}
+
       - name: Create Release
+        if: steps.version.outputs.changed == 'true'
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: v${{ steps.version.outputs.version }}
           files: |
             rust-server/target/wix/*.msi
             dencho-cli-windows.zip

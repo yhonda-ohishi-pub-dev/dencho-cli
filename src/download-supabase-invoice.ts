@@ -62,9 +62,13 @@ async function downloadSupabaseInvoices() {
       await page.click('button:has-text("Continue with GitHub")');
 
       // GitHubログイン画面に遷移するか、直接passkey画面に行くか待機
-      await page.waitForTimeout(3000);
-      const afterClickUrl = page.url();
-      console.log('クリック後のURL:', afterClickUrl);
+      await page.waitForLoadState('networkidle');
+      await page.waitForTimeout(2000);
+      let afterClickUrl = page.url();
+      console.log('クリック直後のURL:', afterClickUrl);
+      console.log('分岐判定: organizations=', afterClickUrl.includes('/organizations'),
+                  'github.com=', afterClickUrl.includes('github.com'),
+                  'login=', afterClickUrl.includes('login'));
 
       // 既にorganizationsページに戻っている場合（認証不要）
       if (afterClickUrl.includes('/organizations')) {
@@ -95,14 +99,21 @@ async function downloadSupabaseInvoices() {
         await page.waitForURL('**/organizations', { timeout: 300000 });
         console.log('組織ページに戻りました');
       }
-      // passkey画面に遷移した場合
+      // passkey/2FA画面に遷移した場合、またはその他
       else {
-        console.log('passkey認証を完了してください...');
+        // 2FA完了後、既にorganizationsにリダイレクトされている可能性をチェック
+        await page.waitForLoadState('networkidle');
+        const currentUrl = page.url();
+        console.log('現在のURL（分岐後）:', currentUrl);
 
-        // 組織ページに戻るまで待機
-        console.log('認証完了を待機中...');
-        await page.waitForURL('**/organizations', { timeout: 300000 });
-        console.log('組織ページに戻りました');
+        if (currentUrl.includes('/organizations')) {
+          console.log('認証が完了しました（2FA/passkey認証後、自動リダイレクト）');
+        } else {
+          console.log('passkey/2FA認証を完了してください...');
+          console.log('認証完了を待機中...');
+          await page.waitForURL('**/organizations', { timeout: 300000 });
+          console.log('組織ページに戻りました');
+        }
       }
 
       // 認証状態を保存

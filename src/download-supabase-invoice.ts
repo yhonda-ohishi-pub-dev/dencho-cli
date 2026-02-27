@@ -101,19 +101,12 @@ async function downloadSupabaseInvoices() {
       }
       // passkey/2FA画面に遷移した場合、またはその他
       else {
-        // 2FA完了後、既にorganizationsにリダイレクトされている可能性をチェック
-        await page.waitForLoadState('networkidle');
-        const currentUrl = page.url();
-        console.log('現在のURL（分岐後）:', currentUrl);
+        console.log('2FA/passkey/OAuth認証フローに入りました...');
+        console.log('organizationsページへのリダイレクトを待機中...');
 
-        if (currentUrl.includes('/organizations')) {
-          console.log('認証が完了しました（2FA/passkey認証後、自動リダイレクト）');
-        } else {
-          console.log('passkey/2FA認証を完了してください...');
-          console.log('認証完了を待機中...');
-          await page.waitForURL('**/organizations', { timeout: 300000 });
-          console.log('組織ページに戻りました');
-        }
+        // organizationsページにリダイレクトされるまで待機（最大5分）
+        await page.waitForURL('**/organizations**', { timeout: 300000 });
+        console.log('組織ページに到達しました');
       }
 
       // 認証状態を保存

@@ -1,6 +1,6 @@
 [package]
 name = "dencho-cli"
-version = "1.0.13"
+version = "1.0.14"
 edition = "2021"
 description = "Supabase invoice downloader with HTTP server"
 license = "MIT"

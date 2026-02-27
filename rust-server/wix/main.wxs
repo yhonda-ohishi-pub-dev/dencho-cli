@@ -21,8 +21,7 @@
     <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
 <?endif ?>
 
-<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'
-     xmlns:util='http://schemas.microsoft.com/wix/UtilExtension'>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
 
     <Product
         Id='*'
@@ -104,9 +103,7 @@
                                 DiskId='1'
                                 Source='$(var.CargoTargetBinDir)\dencho-cli.exe'
                                 KeyPath='yes'/>
-                        </Component>
-                        <!-- Windows Service Component -->
-                        <Component Id='ServiceComponent' Guid='A1B2C3D4-E5F6-7890-ABCD-EF1234567890'>
+                            <!-- Windows Service - installed with exe -->
                             <ServiceInstall
                                 Id='DenchoCliService'
                                 Name='dencho-cli'
@@ -143,7 +140,6 @@
             <ComponentRef Id='PackageJson'/>
             <ComponentRef Id='DistFiles'/>
             <ComponentRef Id='LogsDir'/>
-            <ComponentRef Id='ServiceComponent'/>
 
             <Feature
                 Id='Environment'

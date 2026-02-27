@@ -130,7 +130,11 @@ async function downloadSupabaseInvoices() {
 
         // 組織ページに戻るまで待機
         log('認証完了を待機中...');
-        await page.waitForURL('**/organizations', { timeout: 300000 });
+        // waitForFunction は現在のURLもチェックするため、既に到達済みでも正常に完了する
+        await page.waitForFunction(
+          () => window.location.pathname.includes('/organizations'),
+          { timeout: 300000 }
+        );
         log('組織ページに戻りました');
       }
       // passkey/2FA画面に遷移した場合、またはその他

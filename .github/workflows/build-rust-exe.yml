@@ -40,7 +40,15 @@ jobs:
           cd rust-server
           cargo build --release --target x86_64-pc-windows-msvc
 
+      - name: Cache cargo-wix
+        uses: actions/cache@v4
+        id: cache-cargo-wix
+        with:
+          path: ~/.cargo/bin/cargo-wix.exe
+          key: ${{ runner.os }}-cargo-wix-0.3.9
+
       - name: Install cargo-wix
+        if: steps.cache-cargo-wix.outputs.cache-hit != 'true'
         run: cargo install cargo-wix
 
       - name: Copy files to release directory

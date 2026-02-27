@@ -25,7 +25,7 @@ jobs:
       - name: Setup Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust-server
+          workspaces: rust-server -> target
           shared-key: dencho-cli-release
 
       - name: Setup Node.js

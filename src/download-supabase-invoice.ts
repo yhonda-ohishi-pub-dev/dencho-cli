@@ -8,10 +8,40 @@ const __dirname = path.dirname(__filename);
 
 const AUTH_STATE_PATH = path.join(process.cwd(), '.auth', 'supabase-state.json');
 const DOWNLOAD_DIR = path.join(process.cwd(), 'downloads', 'invoice');
+const LOG_DIR = path.join(process.cwd(), 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'supabase-download.log');
 
 // GitHub認証情報を環境変数から取得
 const GITHUB_USERNAME = process.env.GITHUB_USERNAME || '';
 const GITHUB_PASSWORD = process.env.GITHUB_PASSWORD || '';
+
+// ログ関数
+function log(message: string) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}`;
+  console.log(logMessage);
+
+  // ログディレクトリ作成
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+
+  // ファイルに追記
+  fs.appendFileSync(LOG_FILE, logMessage + '\n');
+}
+
+function logError(message: string, error?: unknown) {
+  const timestamp = new Date().toISOString();
+  const errorDetail = error instanceof Error ? error.stack || error.message : String(error);
+  const logMessage = `[${timestamp}] ERROR: ${message}\n${errorDetail}`;
+  console.error(logMessage);
+
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+
+  fs.appendFileSync(LOG_FILE, logMessage + '\n');
+}
 
 async function downloadSupabaseInvoices() {
   // ダウンロードディレクトリ作成
@@ -38,7 +68,7 @@ async function downloadSupabaseInvoices() {
   const page = await context.newPage();
 
   try {
-    console.log(hasAuth ? '保存済みの認証情報を使用します' : '初回実行: 手動でログインしてください...');
+    log(hasAuth ? '保存済みの認証情報を使用します' : '初回実行: 手動でログインしてください...');
 
     // 組織ページに移動（未ログインの場合は自動的にログインページにリダイレクトされる）
     await page.goto('https://supabase.com/dashboard/organizations', {
@@ -49,14 +79,14 @@ async function downloadSupabaseInvoices() {
 
     // ログインページにリダイレクトされたかチェック
     const currentUrl = page.url();
-    console.log('現在のURL:', currentUrl);
+    log(`現在のURL: ${currentUrl}`);
 
     if (currentUrl.includes('/sign-in')) {
-      console.log('ログインが必要です。GitHub認証ボタンを探しています...');
+      log('ログインが必要です。GitHub認証ボタンを探しています...');
 
       // ボタンが表示されるまで待機
       await page.waitForSelector('button:has-text("Continue with GitHub")', { timeout: 10000 });
-      console.log('GitHub認証ボタンが見つかりました。クリックします...');
+      log('GitHub認証ボタンが見つかりました。クリックします...');
 
       // GitHub OAuthボタンをクリック
       await page.click('button:has-text("Continue with GitHub")');
@@ -65,21 +95,19 @@ async function downloadSupabaseInvoices() {
       await page.waitForLoadState('networkidle');
       await page.waitForTimeout(2000);
       let afterClickUrl = page.url();
-      console.log('クリック直後のURL:', afterClickUrl);
-      console.log('分岐判定: organizations=', afterClickUrl.includes('/organizations'),
-                  'github.com=', afterClickUrl.includes('github.com'),
-                  'login=', afterClickUrl.includes('login'));
+      log(`クリック直後のURL: ${afterClickUrl}`);
+      log(`分岐判定: organizations=${afterClickUrl.includes('/organizations')} github.com=${afterClickUrl.includes('github.com')} login=${afterClickUrl.includes('login')}`);
 
       // 既にorganizationsページに戻っている場合（認証不要）
       if (afterClickUrl.includes('/organizations')) {
-        console.log('認証が完了しました（GitHubセッション利用）');
+        log('認証が完了しました（GitHubセッション利用）');
       }
       // GitHubのログインページに遷移した場合（パスワード入力が必要）
       else if (afterClickUrl.includes('github.com') && afterClickUrl.includes('login')) {
-        console.log('GitHubログインページに遷移しました');
+        log('GitHubログインページに遷移しました');
 
         if (GITHUB_USERNAME && GITHUB_PASSWORD) {
-          console.log('保存された認証情報を使用して自動ログイン中...');
+          log('保存された認証情報を使用して自動ログイン中...');
 
           // Username/Email入力
           await page.fill('input[name="login"]', GITHUB_USERNAME);
@@ -88,21 +116,21 @@ async function downloadSupabaseInvoices() {
           // Sign inボタンをクリック
           await page.click('input[type="submit"][value="Sign in"]');
 
-          console.log('ログイン送信完了。認証を待機中...');
+          log('ログイン送信完了。認証を待機中...');
         } else {
-          console.log('認証情報が保存されていません。手動でUsername/Passwordを入力してください...');
-          console.log('その後、passkey認証を完了してください...');
+          log('認証情報が保存されていません。手動でUsername/Passwordを入力してください...');
+          log('その後、passkey認証を完了してください...');
         }
 
         // 組織ページに戻るまで待機
-        console.log('認証完了を待機中...');
+        log('認証完了を待機中...');
         await page.waitForURL('**/organizations', { timeout: 300000 });
-        console.log('組織ページに戻りました');
+        log('組織ページに戻りました');
       }
       // passkey/2FA画面に遷移した場合、またはその他
       else {
-        console.log('2FA/passkey/OAuth認証フローに入りました...');
-        console.log('organizationsページへのリダイレクトを待機中...');
+        log('2FA/passkey/OAuth認証フローに入りました...');
+        log('organizationsページへのリダイレクトを待機中...');
 
         // organizationsページに到達するまで待機（最大5分）
         // waitForFunction は現在のURLもチェックするため、既に到達済みでも正常に完了する
@@ -113,14 +141,14 @@ async function downloadSupabaseInvoices() {
           },
           { timeout: 300000 }
         );
-        console.log('組織ページに到達しました');
+        log('組織ページに到達しました');
       }
 
       // 認証状態を保存
       await context.storageState({ path: AUTH_STATE_PATH });
-      console.log('認証情報を保存しました: ' + AUTH_STATE_PATH);
+      log('認証情報を保存しました: ' + AUTH_STATE_PATH);
     } else {
-      console.log('既にログイン済みです');
+      log('既にログイン済みです');
     }
 
     // ページが完全に読み込まれるまで待機
@@ -128,30 +156,30 @@ async function downloadSupabaseInvoices() {
     await page.waitForTimeout(3000);
 
     // 組織選択
-    console.log('組織を選択中...');
-    console.log('現在のページURL:', page.url());
+    log('組織を選択中...');
+    log(`現在のページURL: ${page.url()}`);
 
     // 組織リンクが表示されるまで待機
     const orgSelector = 'a[href*="/org/"]';
     await page.waitForSelector(orgSelector, { timeout: 30000 });
-    console.log('組織リンクが見つかりました');
+    log('組織リンクが見つかりました');
 
     // 最初の組織リンクをクリック
     const orgLink = page.locator(orgSelector).first();
     await orgLink.waitFor({ state: 'visible' });
-    console.log('組織リンクが表示されました。クリックします...');
+    log('組織リンクが表示されました。クリックします...');
     await orgLink.click();
 
     // 組織ページが読み込まれるまで待機
     await page.waitForTimeout(2000);
 
     // Billingページへ移動
-    console.log('Billingページへ移動中...');
+    log('Billingページへ移動中...');
     await page.getByRole('link', { name: 'Billing' }).click();
     await page.waitForTimeout(2000);
 
     // ダウンロード処理
-    console.log('請求書をダウンロード中...');
+    log('請求書をダウンロード中...');
 
     const downloadPromise = page.waitForEvent('download');
     await page.locator('.relative.justify-center.cursor-pointer.inline-flex.items-center.space-x-2.text-center.font-regular.ease-out.duration-200.rounded-md.outline-none.transition-all.outline-0.focus-visible\\:outline-4.focus-visible\\:outline-offset-1.border.text-foreground.bg-transparent').first().click();
@@ -163,10 +191,10 @@ async function downloadSupabaseInvoices() {
     const filepath = path.join(DOWNLOAD_DIR, filename);
 
     await download.saveAs(filepath);
-    console.log(`✓ ダウンロード完了: ${filepath}`);
+    log(`✓ ダウンロード完了: ${filepath}`);
 
   } catch (error) {
-    console.error('エラーが発生しました:', error);
+    logError('エラーが発生しました:', error);
     throw error;
   } finally {
     await browser.close();
@@ -176,10 +204,10 @@ async function downloadSupabaseInvoices() {
 // 実行
 downloadSupabaseInvoices()
   .then(() => {
-    console.log('処理が完了しました');
+    log('処理が完了しました');
     process.exit(0);
   })
   .catch((error) => {
-    console.error('処理に失敗しました:', error);
+    logError('処理に失敗しました:', error);
     process.exit(1);
   });

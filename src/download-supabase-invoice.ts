@@ -117,6 +117,7 @@ async function downloadSupabaseInvoices() {
     }
 
     // ページが完全に読み込まれるまで待機
+    await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
     // 組織選択
@@ -124,10 +125,15 @@ async function downloadSupabaseInvoices() {
     console.log('現在のページURL:', page.url());
 
     // 組織リンクが表示されるまで待機
-    await page.waitForSelector('a:has-text("yhonda-ohishi\'s Org")', { timeout: 10000 });
+    const orgSelector = 'a[href*="/org/"]';
+    await page.waitForSelector(orgSelector, { timeout: 30000 });
     console.log('組織リンクが見つかりました');
 
-    await page.click('a:has-text("yhonda-ohishi\'s Org")');
+    // 最初の組織リンクをクリック
+    const orgLink = page.locator(orgSelector).first();
+    await orgLink.waitFor({ state: 'visible' });
+    console.log('組織リンクが表示されました。クリックします...');
+    await orgLink.click();
 
     // 組織ページが読み込まれるまで待機
     await page.waitForTimeout(2000);

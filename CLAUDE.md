@@ -30,3 +30,8 @@ cargo build --release  # Rustサーバーをビルド (rust-server/)
    - npm: `package.json` の version
    - Cargo: `rust-server/Cargo.toml` の version
 4. コミット & プッシュ
+5. **タグを作成してプッシュ**（GitHub Actionsでリリースビルドがトリガーされる）
+   ```bash
+   git tag v1.0.xx
+   git push origin v1.0.xx
+   ```
